@@ -2,47 +2,67 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const { createObjectCsvWriter } = require('csv-writer');
 
-const BASE_URL = "https://medicament.ma/listing-des-medicaments/";
+const BASE_URL = "https://medicament.ma/listing-des-medicaments/page/";
 
-async function scrapePage(url) {
-  const { data } = await axios.get(url);
-  const $ = cheerio.load(data);
+async function scrapePage(page) {
+  const url = `${BASE_URL}${page}/`;
+  console.log(`Scraping page ${page}...`);
 
-  const meds = [];
+  try {
+    const { data } = await axios.get(url);
+    const $ = cheerio.load(data);
 
-  // ⚠️ Selectors may change depending on site structure
-  $('li').each((i, el) => {
-    const text = $(el).text().trim();
+    const meds = [];
 
-    if (text.length > 10) {
-      meds.push({
-        name: text.replace(/\s+/g, ' ')
-      });
-    }
-  });
+    $('li').each((i, el) => {
+      const text = $(el).text().trim();
 
-  return meds;
+      if (text.length > 10) {
+        meds.push({
+          name: text.replace(/\s+/g, ' ')
+        });
+      }
+    });
+
+    return meds;
+
+  } catch (error) {
+    console.log(`Error on page ${page}`);
+    return [];
+  }
 }
 
 async function main() {
-  try {
-    const meds = await scrapePage(BASE_URL);
+  let allMeds = [];
+  let page = 1;
 
-    console.log(`Scraped ${meds.length} items`);
+  while (true) {
+    const meds = await scrapePage(page);
 
-    const csvWriter = createObjectCsvWriter({
-      path: 'medicaments.csv',
-      header: [
-        { id: 'name', title: 'NAME' }
-      ]
-    });
+    if (meds.length === 0) {
+      console.log("No more data, stopping...");
+      break;
+    }
 
-    await csvWriter.writeRecords(meds);
+    allMeds = allMeds.concat(meds);
+    page++;
 
-    console.log("CSV file created: medicaments.csv");
-  } catch (error) {
-    console.error("Error:", error.message);
+    // small delay (important to avoid blocking)
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
+
+  console.log(`Total medications scraped: ${allMeds.length}`);
+
+  const csvWriter = createObjectCsvWriter({
+    path: 'medicaments.csv',
+    header: [
+      { id: 'name', title: 'NAME' }
+    ]
+  });
+
+  await csvWriter.writeRecords(allMeds);
+
+  console.log("CSV file created: medicaments.csv");
 }
 
 main();
